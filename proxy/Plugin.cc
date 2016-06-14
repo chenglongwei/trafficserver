@@ -136,13 +136,15 @@ plugin_load(int argc, char *argv[], bool validateOnly)
     init(argc, argv);
   } // done elevating access
 
-  if (plugin_reg_current->plugin_registered) {
-    plugin_reg_list.push(plugin_reg_current);
-  } else {
-    Fatal("plugin not registered by calling TSPluginRegister");
-    return false; // this line won't get called since Fatal brings down ATS
+  if (!plugin_reg_current->plugin_registered) {
+    // register the plugin if not have done
+    plugin_reg_current->plugin_name = ats_strdup(argv[0]);
+    plugin_reg_current->vendor_name = ats_strdup("LinkedIn");
+    plugin_reg_current->support_email = ats_strdup("bgeffon@linkedin.com");
+    plugin_reg_current->plugin_registered = true;
   }
 
+  plugin_reg_list.push(plugin_reg_current);
   plugin_reg_current = NULL;
 
   return true;
