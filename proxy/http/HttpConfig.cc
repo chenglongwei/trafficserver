@@ -1111,6 +1111,9 @@ HttpConfig::startup()
   // Local Manager
   HttpEstablishStaticConfigLongLong(c.synthetic_port, "proxy.config.admin.synthetic_port");
 
+  // Debug variable
+  HttpEstablishStaticConfigByte(c.debug_enabled, "proxy.config.debug.enabled");
+
   // Cluster time delta gets it own callback since it needs
   //  to use ink_atomic_swap
   c.cluster_time_delta = 0;
@@ -1380,6 +1383,9 @@ HttpConfig::reconfigure()
 
   // Local Manager
   params->synthetic_port = m_master.synthetic_port;
+
+  // Debug
+  params->debug_enabled = INT_TO_BOOL(m_master.debug_enabled);
 
   m_id = configProcessor.set(m_id, params);
 

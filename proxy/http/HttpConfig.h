@@ -839,6 +839,11 @@ public:
   ////////////////////
   MgmtInt synthetic_port;
 
+  ////////////////////
+  // Debug variable //
+  ////////////////////
+  MgmtByte debug_enabled;
+
 private:
   /////////////////////////////////////
   // operator = and copy constructor //
@@ -979,7 +984,8 @@ inline HttpConfigParams::HttpConfigParams()
     parser_allow_non_http(1),
     max_post_size(0),
     server_session_sharing_pool(TS_SERVER_SESSION_SHARING_POOL_THREAD),
-    synthetic_port(0)
+    synthetic_port(0),
+    debug_enabled(0)
 {
 }
 
