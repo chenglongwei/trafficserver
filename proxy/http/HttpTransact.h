@@ -1258,6 +1258,9 @@ public:
   static void HandlePushError(State *s, const char *reason);
   static void HandleBadPushRespHdr(State *s);
 
+  static void OpenDebug(State *s);
+  static void CloseDebug(State *s);
+
   // Utility Methods
   static void issue_revalidate(State *s);
   static bool get_ka_info_from_config(State *s, ConnectionAttributes *server_info);

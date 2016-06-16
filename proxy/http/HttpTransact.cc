@@ -65,6 +65,9 @@ extern HttpBodyFactory *body_factory;
 
 static const char local_host_ip_str[] = "127.0.0.1";
 
+// debug on/off configured through url query
+static bool debug = false;
+
 inline static void
 simple_or_unavailable_server_retry(HttpTransact::State *s)
 {
@@ -552,6 +555,34 @@ HttpTransact::BadRequest(State *s)
                          "parser marked request bad");
   bootstrap_state_variables_from_request(s, &s->hdr_info.client_request);
   build_error_response(s, HTTP_STATUS_BAD_REQUEST, "Invalid HTTP Request", "request#syntax_error", NULL);
+  TRANSACT_RETURN(SM_ACTION_SEND_ERROR_CACHE_NOOP, NULL);
+}
+
+void
+HttpTransact::OpenDebug(State *s)
+{
+  DebugTxn("http_trans", "[OpenDebug]"
+                         "parser marked debug on");
+  bootstrap_state_variables_from_request(s, &s->hdr_info.client_request);
+  build_response(s, &s->hdr_info.client_response, s->client_info.http_version, HTTP_STATUS_OK, "Debug is enabled");
+
+  // Set debug flag on.
+  debug = true;
+
+  TRANSACT_RETURN(SM_ACTION_INTERNAL_CACHE_NOOP, NULL);
+}
+
+void
+HttpTransact::CloseDebug(State *s)
+{
+  DebugTxn("http_trans", "[CloseDebug]"
+                         "parser marked debug off");
+  bootstrap_state_variables_from_request(s, &s->hdr_info.client_request);
+  build_error_response(s, HTTP_STATUS_OK, "HTTP Request Close Debug", "Debug is disabled", "%s", "Debug is disabled body");
+
+  // Set debug flag off.
+  debug = false;
+
   TRANSACT_RETURN(SM_ACTION_SEND_ERROR_CACHE_NOOP, NULL);
 }
 

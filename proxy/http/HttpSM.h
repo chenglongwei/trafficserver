@@ -477,6 +477,9 @@ protected:
   int find_http_resp_buffer_size(int64_t cl);
   int64_t server_transfer_init(MIOBuffer *buf, int hdr_size);
 
+  // helper function to get query debug state.
+  int get_query_debug_state(URL *url);
+
 public:
   // Stats & Logging Info
   int client_request_hdr_bytes;

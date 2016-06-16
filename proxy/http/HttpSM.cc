@@ -808,6 +808,20 @@ HttpSM::state_read_client_request_header(int event, void *data)
         (t_state.method == HTTP_WKSIDX_POST && HttpConfig::m_master.post_copy_size))
       enable_redirection = t_state.txn_conf->redirection_enabled;
 
+    // Debug on/off: first get debug enable info from configuation file,
+    // then check whether the request is to open a debug session.
+    if (t_state.http_config_param->debug_enabled == 1) {
+      URL *url = t_state.hdr_info.client_request.url_get();
+      int state = get_query_debug_state(url);
+      if (state == 0) {
+        call_transact_and_set_next_state(HttpTransact::CloseDebug);
+        break;
+      } else if (state == 1) {
+        call_transact_and_set_next_state(HttpTransact::OpenDebug);
+        break;
+      }
+    }
+
     call_transact_and_set_next_state(HttpTransact::ModifyRequest);
 
     break;
@@ -816,6 +830,24 @@ HttpSM::state_read_client_request_header(int event, void *data)
   }
 
   return 0;
+}
+
+// return 0 means debug off;
+//        1 means debug on;
+//        -1 means not set.
+int
+HttpSM::get_query_debug_state(URL *url) {
+  const char * query;
+  int query_length;
+  query = url->query_get(&query_length);
+  if (query_length == 8 && strncmp(query, "debug=on", 8) == 0) {
+	  return 1;
+  }
+  if (query_length == 9 && strncmp(query, "debug=off", 9) == 0) {
+	  return 0;
+  }
+
+  return -1;
 }
 
 #ifdef PROXY_DRAIN
