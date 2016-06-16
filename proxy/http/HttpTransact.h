@@ -1260,6 +1260,7 @@ public:
 
   static void OpenDebug(State *s);
   static void CloseDebug(State *s);
+  static void build_debug_response(State *s, const char *format, ...);
 
   // Utility Methods
   static void issue_revalidate(State *s);

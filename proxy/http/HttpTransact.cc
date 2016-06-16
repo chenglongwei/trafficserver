@@ -564,12 +564,18 @@ HttpTransact::OpenDebug(State *s)
   DebugTxn("http_trans", "[OpenDebug]"
                          "parser marked debug on");
   bootstrap_state_variables_from_request(s, &s->hdr_info.client_request);
-  build_response(s, &s->hdr_info.client_response, s->client_info.http_version, HTTP_STATUS_OK, "Debug is enabled");
+
+  const char *response = "<!DOCTYPE html>"
+                           "<html>"
+                           "<head><title>Debug on/off </title></head>"
+                           "<body><h1>Debug on</h1><p>You have enabled debug functions.</p></body>"
+                           "</html>";
+    build_debug_response(s, "%s", response);
 
   // Set debug flag on.
   debug = true;
 
-  TRANSACT_RETURN(SM_ACTION_INTERNAL_CACHE_NOOP, NULL);
+  TRANSACT_RETURN(SM_ACTION_SEND_ERROR_CACHE_NOOP, NULL);
 }
 
 void
@@ -578,12 +584,74 @@ HttpTransact::CloseDebug(State *s)
   DebugTxn("http_trans", "[CloseDebug]"
                          "parser marked debug off");
   bootstrap_state_variables_from_request(s, &s->hdr_info.client_request);
-  build_error_response(s, HTTP_STATUS_OK, "HTTP Request Close Debug", "Debug is disabled", "%s", "Debug is disabled body");
+
+  const char *response = "<!DOCTYPE html>"
+                         "<html>"
+                         "<head><title>Debug On/Off </title></head>"
+                         "<body><h1>Debug off</h1><p>You have disabled debug functions.</p></body>"
+                         "</html>";
+  build_debug_response(s, "%s", response);
 
   // Set debug flag off.
   debug = false;
 
   TRANSACT_RETURN(SM_ACTION_SEND_ERROR_CACHE_NOOP, NULL);
+}
+
+void
+HttpTransact::build_debug_response(State *s, const char *format, ...)
+{
+  va_list ap;
+  const char *reason_phrase;
+  char *url_string;
+  char body_language[256], body_type[256];
+
+  ////////////////////////////////////////////////////////////
+  // get the url --- remember this is dynamically allocated //
+  ////////////////////////////////////////////////////////////
+  if (s->hdr_info.client_request.valid()) {
+    url_string = s->hdr_info.client_request.url_string_get(&s->arena);
+  } else {
+    url_string = NULL;
+  }
+
+  // set the source to internal so that chunking is handled correctly
+  s->source = SOURCE_INTERNAL;
+
+  reason_phrase = http_hdr_reason_lookup(HTTP_STATUS_OK);
+  build_response(s, &s->hdr_info.client_response, s->client_info.http_version, HTTP_STATUS_OK, reason_phrase);
+
+  ////////////////////////////////////////////////////////////////////
+  // create the error message using the "body factory", which will  //
+  // build a customized error message if available, or generate the //
+  // old style internal defaults otherwise --- the body factory     //
+  // supports language targeting using the Accept-Language header   //
+  ////////////////////////////////////////////////////////////////////
+
+  int64_t len;
+  char *new_msg;
+
+  va_start(ap, format);
+  new_msg = body_factory->fabricate_with_old_api("default", s, 8192, &len, body_language, sizeof(body_language), body_type,
+                                                   sizeof(body_type), format, ap);
+  va_end(ap);
+
+  // After the body factory is called, a new "body" is allocated, and we must replace it. It is
+  // unfortunate that there's no way to avoid this fabrication even when there is no substitutions...
+  s->free_internal_msg_buffer();
+  s->internal_msg_buffer = new_msg;
+  s->internal_msg_buffer_size = len;
+  s->internal_msg_buffer_fast_allocator_size = -1;
+
+  s->hdr_info.client_response.value_set(MIME_FIELD_CONTENT_TYPE, MIME_LEN_CONTENT_TYPE, body_type, strlen(body_type));
+  s->hdr_info.client_response.value_set(MIME_FIELD_CONTENT_LANGUAGE, MIME_LEN_CONTENT_LANGUAGE, body_language,
+                                          strlen(body_language));
+  if (url_string) {
+    s->arena.str_free(url_string);
+  }
+
+  s->next_action = SM_ACTION_SEND_ERROR_CACHE_NOOP;
+  return;
 }
 
 void
