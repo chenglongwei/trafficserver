@@ -72,6 +72,8 @@ extern int cache_config_read_while_writer;
 DList(HttpSM, debug_link) debug_sm_list;
 ink_mutex debug_sm_list_mutex;
 
+bool debug_session_open = false;
+
 static const int sub_header_size = sizeof("Content-type: ") - 1 + 2 + sizeof("Content-range: bytes ") - 1 + 4;
 static const int boundary_size   = 2 + sizeof("RANGE_SEPARATOR") - 1 + 2;
 
@@ -815,9 +817,11 @@ HttpSM::state_read_client_request_header(int event, void *data)
       int state = get_query_debug_state(url);
       if (state == 0) {
         call_transact_and_set_next_state(HttpTransact::CloseDebug);
+        debug_session_open = false;
         break;
       } else if (state == 1) {
         call_transact_and_set_next_state(HttpTransact::OpenDebug);
+        debug_session_open = true;
         break;
       }
     }
@@ -848,6 +852,22 @@ HttpSM::get_query_debug_state(URL *url) {
   }
 
   return -1;
+}
+
+bool
+HttpSM::need_send_hdr_info(URL *url) {
+  // todo: Parse url to get user defined hooks;
+  // currently only consider the debug on/off.
+  return debug_session_open;
+}
+
+void
+HttpSM::send_hdr_info(const char *tag) {
+  // todo: Send hdr info to server
+  DUMP_HEADER("http_hdrs", &t_state.hdr_info.client_request, t_state.state_machine_id, tag);
+  DUMP_HEADER("http_hdrs", &t_state.hdr_info.server_request, t_state.state_machine_id, tag);
+  DUMP_HEADER("http_hdrs", &t_state.hdr_info.server_response, t_state.state_machine_id, tag);
+  DUMP_HEADER("http_hdrs", &t_state.hdr_info.client_response, t_state.state_machine_id, tag);
 }
 
 #ifdef PROXY_DRAIN
@@ -1349,6 +1369,12 @@ HttpSM::state_common_wait_for_transform_read(HttpTransformInfo *t_info, HttpSMHa
 int
 HttpSM::state_api_callback(int event, void *data)
 {
+  // After calling Hook from plugin, send header info.
+  URL *url = t_state.hdr_info.client_request.url_get();
+  if (need_send_hdr_info(url)) {
+    send_hdr_info("After Plugin");
+  }
+
   ink_release_assert(magic == HTTP_SM_MAGIC_ALIVE);
 
   ink_assert(reentrancy_count >= 0);
@@ -1479,7 +1505,15 @@ HttpSM::state_api_callout(int event, void *data)
 
         if (!api_timer)
           api_timer = Thread::get_hrtime_updated();
+
+        // Before calling hook from plugin, send header info.
+        URL *url = t_state.hdr_info.client_request.url_get();
+        if (need_send_hdr_info(url)) {
+          send_hdr_info("Before plugin");
+        }
+
         hook->invoke(TS_EVENT_HTTP_READ_REQUEST_HDR + cur_hook_id, this);
+
         if (api_timer > 0) { // true if the hook did not call TxnReenable()
           milestone_update_api_time(milestones, api_timer);
           api_timer = -Thread::get_hrtime_updated(); // set in order to track non-active callout duration

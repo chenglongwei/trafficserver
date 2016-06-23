@@ -65,9 +65,6 @@ extern HttpBodyFactory *body_factory;
 
 static const char local_host_ip_str[] = "127.0.0.1";
 
-// debug on/off configured through url query
-static bool debug = false;
-
 inline static void
 simple_or_unavailable_server_retry(HttpTransact::State *s)
 {
@@ -566,14 +563,11 @@ HttpTransact::OpenDebug(State *s)
   bootstrap_state_variables_from_request(s, &s->hdr_info.client_request);
 
   const char *response = "<!DOCTYPE html>"
-                           "<html>"
-                           "<head><title>Debug on/off </title></head>"
-                           "<body><h1>Debug on</h1><p>You have enabled debug functions.</p></body>"
-                           "</html>";
-    build_debug_response(s, "%s", response);
-
-  // Set debug flag on.
-  debug = true;
+                         "<html>"
+                         "<head><title>Debug on/off </title></head>"
+                         "<body><h1>Debug on</h1><p>You have enabled debug functions.</p></body>"
+                         "</html>";
+  build_debug_response(s, "%s", response);
 
   TRANSACT_RETURN(SM_ACTION_SEND_ERROR_CACHE_NOOP, NULL);
 }
@@ -591,9 +585,6 @@ HttpTransact::CloseDebug(State *s)
                          "<body><h1>Debug off</h1><p>You have disabled debug functions.</p></body>"
                          "</html>";
   build_debug_response(s, "%s", response);
-
-  // Set debug flag off.
-  debug = false;
 
   TRANSACT_RETURN(SM_ACTION_SEND_ERROR_CACHE_NOOP, NULL);
 }

@@ -95,6 +95,9 @@ enum BackgroundFill_t {
 
 extern ink_mutex debug_sm_list_mutex;
 
+// debug on/off configured through url query
+extern bool debug_session_open;
+
 struct HttpVCTableEntry {
   VConnection *vc;
   MIOBuffer *read_buffer;
@@ -479,6 +482,9 @@ protected:
 
   // helper function to get query debug state.
   int get_query_debug_state(URL *url);
+
+  bool need_send_hdr_info(URL *url);
+  void send_hdr_info(const char *tag);
 
 public:
   // Stats & Logging Info
