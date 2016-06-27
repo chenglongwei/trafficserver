@@ -45,6 +45,7 @@
 //#include "I_Auth.h"
 //#include "HttpAuthParams.h"
 #include "congest/Congestion.h"
+#include <curl/curl.h>
 
 #define DEFAULT_RESPONSE_BUFFER_SIZE_INDEX 6 // 8K
 #define DEFAULT_REQUEST_BUFFER_SIZE_INDEX 6  // 8K
@@ -861,6 +862,34 @@ HttpSM::need_send_hdr_info(URL *url) {
   return debug_session_open;
 }
 
+void *
+do_send_hdr_info(void *data) {
+  CURL *curl;
+  CURLcode res;
+
+  // get a curl handle
+  curl = curl_easy_init();
+  if(curl) {
+    // First set the URL that is about to receive our POST. This URL can
+    // just as well be a https:// URL if that is what should receive the
+    // data.
+    curl_easy_setopt(curl, CURLOPT_URL, "http://127.0.0.1:9000/");
+    // Now specify the POST data
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, (char *)data);
+
+    /* Perform the request, res will get the return code */
+    res = curl_easy_perform(curl);
+    // Check for errors
+    if(res != CURLE_OK)
+      fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+
+    // always cleanup
+    curl_easy_cleanup(curl);
+  }
+
+  return NULL;
+}
+
 void
 HttpSM::send_hdr_info(const char *tag) {
   // todo: Send hdr info to server
@@ -868,6 +897,19 @@ HttpSM::send_hdr_info(const char *tag) {
   DUMP_HEADER("http_hdrs", &t_state.hdr_info.server_request, t_state.state_machine_id, tag);
   DUMP_HEADER("http_hdrs", &t_state.hdr_info.server_response, t_state.state_machine_id, tag);
   DUMP_HEADER("http_hdrs", &t_state.hdr_info.client_response, t_state.state_machine_id, tag);
+
+  char buf[] = "from_ats:dfdd";
+
+  // We are not going to wait for the thread, so set it detachable.
+  pthread_attr_t send_thread_attr;
+  pthread_attr_init(&send_thread_attr);
+  pthread_attr_setdetachstate(&send_thread_attr, PTHREAD_CREATE_DETACHED);
+
+  pthread_t send_thread_tid;
+  int error = pthread_create(&send_thread_tid, &send_thread_attr, do_send_hdr_info, (void *)buf);
+  if (error != 0) {
+    fprintf(stderr, "Could not run thread %d, errno %d\n", send_thread_tid, error);
+  }
 }
 
 #ifdef PROXY_DRAIN

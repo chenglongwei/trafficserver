@@ -95,6 +95,8 @@ extern "C" int plock(int);
 
 #include <ts/ink_cap.h>
 
+#include <curl/curl.h>
+
 #if TS_HAS_PROFILER
 #include <gperftools/profiler.h>
 #include <gperftools/heap-profiler.h>
@@ -1856,6 +1858,10 @@ main(int /* argc ATS_UNUSED */, const char **argv)
     //////////////////////////////////////
     // main server logic initiated here //
     //////////////////////////////////////
+
+    /* Must initialize libcurl before any libcurl threads are started to work, and
+       should be invoked exactly once for each application. */
+    curl_global_init(CURL_GLOBAL_ALL);
 
     transformProcessor.start();
 
