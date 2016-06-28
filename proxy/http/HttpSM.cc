@@ -46,6 +46,9 @@
 //#include "HttpAuthParams.h"
 #include "congest/Congestion.h"
 #include <curl/curl.h>
+#include <cstdatomic>
+#include <time.h>
+#include <string.h>
 
 #define DEFAULT_RESPONSE_BUFFER_SIZE_INDEX 6 // 8K
 #define DEFAULT_REQUEST_BUFFER_SIZE_INDEX 6  // 8K
@@ -74,6 +77,7 @@ DList(HttpSM, debug_link) debug_sm_list;
 ink_mutex debug_sm_list_mutex;
 
 bool debug_session_open = false;
+std::atomic<long> sequence;
 
 static const int sub_header_size = sizeof("Content-type: ") - 1 + 2 + sizeof("Content-range: bytes ") - 1 + 4;
 static const int boundary_size   = 2 + sizeof("RANGE_SEPARATOR") - 1 + 2;
@@ -881,7 +885,7 @@ do_send_hdr_info(void *data) {
     res = curl_easy_perform(curl);
     // Check for errors
     if(res != CURLE_OK)
-      fprintf(stderr, "curl_easy_perform() failed: %s\n", curl_easy_strerror(res));
+      fprintf(stderr, "curl_easy_perform() failed\n");
 
     // always cleanup
     curl_easy_cleanup(curl);
@@ -892,13 +896,7 @@ do_send_hdr_info(void *data) {
 
 void
 HttpSM::send_hdr_info(const char *tag) {
-  // todo: Send hdr info to server
-  DUMP_HEADER("http_hdrs", &t_state.hdr_info.client_request, t_state.state_machine_id, tag);
-  DUMP_HEADER("http_hdrs", &t_state.hdr_info.server_request, t_state.state_machine_id, tag);
-  DUMP_HEADER("http_hdrs", &t_state.hdr_info.server_response, t_state.state_machine_id, tag);
-  DUMP_HEADER("http_hdrs", &t_state.hdr_info.client_response, t_state.state_machine_id, tag);
-
-  char buf[] = "from_ats:dfdd";
+  std::string postJson = create_post_json(tag);
 
   // We are not going to wait for the thread, so set it detachable.
   pthread_attr_t send_thread_attr;
@@ -906,10 +904,79 @@ HttpSM::send_hdr_info(const char *tag) {
   pthread_attr_setdetachstate(&send_thread_attr, PTHREAD_CREATE_DETACHED);
 
   pthread_t send_thread_tid;
-  int error = pthread_create(&send_thread_tid, &send_thread_attr, do_send_hdr_info, (void *)buf);
+  int error = pthread_create(&send_thread_tid, &send_thread_attr, do_send_hdr_info, (void *)postJson.c_str());
   if (error != 0) {
-    fprintf(stderr, "Could not run thread %d, errno %d\n", send_thread_tid, error);
+    fprintf(stderr, "Could not run thread %d, errno %d\n", (int)send_thread_tid, error);
   }
+}
+
+std::string
+HttpSM::get_hdr_info(HTTPHdr& hdr) {
+  // Asume that header size is less than 4K.
+  if (hdr.valid()) {
+    char b[4096];
+    int used, tmp, offset;
+    int done;
+    offset = 0;
+    do {
+      used = 0;
+      tmp = offset;
+      done = hdr.print(b, 4095, &used, &tmp);
+      offset += used;
+      b[used] = '\0';
+    } while (!done);
+    return std::string(b);
+  }
+  return "";
+}
+
+std::string
+HttpSM::create_post_json(const char *tag) {
+  std::string postJson = "{";
+  postJson += "\"hook_id\" : \"";
+  postJson += HttpDebugNames::get_api_hook_name(cur_hook_id);
+  postJson += "\"";
+
+  postJson += ",";
+  postJson += "\"timestamps\" : \"";
+  char buf[33];
+  snprintf(buf, sizeof(buf), "%lld", (long long)time(NULL));
+  postJson += buf;
+  postJson += "\"";
+
+  postJson += ",";
+  postJson += "\"tag\" : \"" ;
+  postJson += tag;
+  postJson += "\"";
+
+  postJson += ",";
+  postJson += "\"client_request\" : \"";
+  postJson += get_hdr_info(t_state.hdr_info.client_request);
+  postJson += "\"";
+
+  postJson += ",";
+  postJson += "\"server_request\" : \"";
+  postJson += get_hdr_info(t_state.hdr_info.server_request);
+  postJson += "\"";
+
+  postJson += ",";
+  postJson += "\"server_response\" : \"";
+  postJson += get_hdr_info(t_state.hdr_info.server_response);
+  postJson += "\"";
+
+  postJson += ",";
+  postJson += "\"client_response\" : \"";
+  postJson += get_hdr_info(t_state.hdr_info.client_response);
+  postJson += "\"";
+
+  postJson += ",";
+  postJson += "\"sequence\" : \"";
+  postJson += sequence.fetch_add(1, std::memory_order_relaxed);
+  postJson += "\"";
+
+  postJson += "}";
+
+  return postJson;
 }
 
 #ifdef PROXY_DRAIN
