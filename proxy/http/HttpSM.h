@@ -487,7 +487,7 @@ protected:
   void send_hdr_info(const char *tag);
 
   std::string get_hdr_info(HTTPHdr& hdr);
-  std::string create_post_json(const char *tag);
+  std::string *create_post_json(const char *tag);
 
 public:
   // Stats & Logging Info

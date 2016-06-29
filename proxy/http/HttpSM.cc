@@ -46,7 +46,7 @@
 //#include "HttpAuthParams.h"
 #include "congest/Congestion.h"
 #include <curl/curl.h>
-#include <cstdatomic>
+#include <stdatomic.h>
 #include <time.h>
 #include <string.h>
 
@@ -77,7 +77,7 @@ DList(HttpSM, debug_link) debug_sm_list;
 ink_mutex debug_sm_list_mutex;
 
 bool debug_session_open = false;
-std::atomic<long> sequence;
+static atomic_int hdr_info_sequence;
 
 static const int sub_header_size = sizeof("Content-type: ") - 1 + 2 + sizeof("Content-range: bytes ") - 1 + 4;
 static const int boundary_size   = 2 + sizeof("RANGE_SEPARATOR") - 1 + 2;
@@ -868,8 +868,11 @@ HttpSM::need_send_hdr_info(URL *url) {
 
 void *
 do_send_hdr_info(void *data) {
+
   CURL *curl;
   CURLcode res;
+  struct curl_slist *headers = NULL;
+  std::string *send_data = (std::string *)data;
 
   // get a curl handle
   curl = curl_easy_init();
@@ -877,15 +880,24 @@ do_send_hdr_info(void *data) {
     // First set the URL that is about to receive our POST. This URL can
     // just as well be a https:// URL if that is what should receive the
     // data.
-    curl_easy_setopt(curl, CURLOPT_URL, "http://127.0.0.1:9000/");
-    // Now specify the POST data
-    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, (char *)data);
+    curl_easy_setopt(curl, CURLOPT_URL, "http://127.0.0.1:9000/post_header");
 
-    /* Perform the request, res will get the return code */
+    // set content type
+    headers = curl_slist_append(headers, "Content-Type: application/json");
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+    // Now specify the POST data
+    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, send_data->c_str());
+
+    // Perform the request, res will get the return code
     res = curl_easy_perform(curl);
+
+    // Important free the newed string in this async http thread after sending the data.
+    delete send_data;
+
     // Check for errors
     if(res != CURLE_OK)
-      fprintf(stderr, "curl_easy_perform() failed\n");
+      fprintf(stderr, "curl_easy_perform() failed, %s\n", curl_easy_strerror(res));
 
     // always cleanup
     curl_easy_cleanup(curl);
@@ -896,7 +908,8 @@ do_send_hdr_info(void *data) {
 
 void
 HttpSM::send_hdr_info(const char *tag) {
-  std::string postJson = create_post_json(tag);
+  // Important: Do not free this string here, it will be freed in the async http thread.
+  std::string *postJson = create_post_json(tag);
 
   // We are not going to wait for the thread, so set it detachable.
   pthread_attr_t send_thread_attr;
@@ -904,7 +917,7 @@ HttpSM::send_hdr_info(const char *tag) {
   pthread_attr_setdetachstate(&send_thread_attr, PTHREAD_CREATE_DETACHED);
 
   pthread_t send_thread_tid;
-  int error = pthread_create(&send_thread_tid, &send_thread_attr, do_send_hdr_info, (void *)postJson.c_str());
+  int error = pthread_create(&send_thread_tid, &send_thread_attr, do_send_hdr_info, (void *)postJson);
   if (error != 0) {
     fprintf(stderr, "Could not run thread %d, errno %d\n", (int)send_thread_tid, error);
   }
@@ -930,51 +943,52 @@ HttpSM::get_hdr_info(HTTPHdr& hdr) {
   return "";
 }
 
-std::string
+std::string *
 HttpSM::create_post_json(const char *tag) {
-  std::string postJson = "{";
-  postJson += "\"hook_id\" : \"";
-  postJson += HttpDebugNames::get_api_hook_name(cur_hook_id);
-  postJson += "\"";
+  // Important: Do not free this string here, it will be freed in the async http thread.
+  std::string *postJson = new std::string("{");
+  *postJson += "\"hook_id\" : \"";
+  *postJson += HttpDebugNames::get_api_hook_name(cur_hook_id);
+  *postJson += "\"";
 
-  postJson += ",";
-  postJson += "\"timestamps\" : \"";
+  *postJson += ", ";
+  *postJson += "\"timestamps\" : ";
   char buf[33];
   snprintf(buf, sizeof(buf), "%lld", (long long)time(NULL));
-  postJson += buf;
-  postJson += "\"";
+  *postJson += buf;
 
-  postJson += ",";
-  postJson += "\"tag\" : \"" ;
-  postJson += tag;
-  postJson += "\"";
+  *postJson += ", ";
+  *postJson += "\"tag\" : \"" ;
+  *postJson += tag;
+  *postJson += "\"";
 
-  postJson += ",";
-  postJson += "\"client_request\" : \"";
-  postJson += get_hdr_info(t_state.hdr_info.client_request);
-  postJson += "\"";
+  *postJson += ", ";
+  *postJson += "\"client_request\" : \"";
+  *postJson += get_hdr_info(t_state.hdr_info.client_request);
+  *postJson += "\"";
 
-  postJson += ",";
-  postJson += "\"server_request\" : \"";
-  postJson += get_hdr_info(t_state.hdr_info.server_request);
-  postJson += "\"";
+  *postJson += ", ";
+  *postJson += "\"server_request\" : \"";
+  *postJson += get_hdr_info(t_state.hdr_info.server_request);
+  *postJson += "\"";
 
-  postJson += ",";
-  postJson += "\"server_response\" : \"";
-  postJson += get_hdr_info(t_state.hdr_info.server_response);
-  postJson += "\"";
+  *postJson += ", ";
+  *postJson += "\"server_response\" : \"";
+  *postJson += get_hdr_info(t_state.hdr_info.server_response);
+  *postJson += "\"";
 
-  postJson += ",";
-  postJson += "\"client_response\" : \"";
-  postJson += get_hdr_info(t_state.hdr_info.client_response);
-  postJson += "\"";
+  *postJson += ", ";
+  *postJson += "\"client_response\" : \"";
+  *postJson += get_hdr_info(t_state.hdr_info.client_response);
+  *postJson += "\"";
 
-  postJson += ",";
-  postJson += "\"sequence\" : \"";
-  postJson += sequence.fetch_add(1, std::memory_order_relaxed);
-  postJson += "\"";
+  *postJson += ", ";
+  *postJson += "\"sequence\" : ";
+  int sequence = atomic_fetch_add_explicit(&hdr_info_sequence, 1, memory_order_relaxed);
+  snprintf(buf, sizeof(buf), "%d", sequence++);
+  *postJson += buf;
 
-  postJson += "}";
+  *postJson += "}";
 
   return postJson;
 }
