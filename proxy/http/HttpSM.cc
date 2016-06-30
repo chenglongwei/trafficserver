@@ -903,7 +903,7 @@ do_send_hdr_info(void *data) {
     curl_easy_cleanup(curl);
   }
 
-  return NULL;
+  pthread_exit(0);
 }
 
 void
@@ -945,15 +945,21 @@ HttpSM::get_hdr_info(HTTPHdr& hdr) {
 
 std::string *
 HttpSM::create_post_json(const char *tag) {
+  char buf[33];
   // Important: Do not free this string here, it will be freed in the async http thread.
   std::string *postJson = new std::string("{");
+
+  *postJson += "\"state_machine_id\" : ";
+  snprintf(buf, sizeof(buf), "%lld", t_state.state_machine_id);
+  *postJson += buf;
+
+  *postJson += ", ";
   *postJson += "\"hook_id\" : \"";
   *postJson += HttpDebugNames::get_api_hook_name(cur_hook_id);
   *postJson += "\"";
 
   *postJson += ", ";
   *postJson += "\"timestamps\" : ";
-  char buf[33];
   snprintf(buf, sizeof(buf), "%lld", (long long)time(NULL));
   *postJson += buf;
 
