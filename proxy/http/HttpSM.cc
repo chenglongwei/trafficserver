@@ -78,6 +78,7 @@ ink_mutex debug_sm_list_mutex;
 
 bool debug_session_open = false;
 static atomic_int hdr_info_sequence;
+static std::string plugin_name;
 
 static const int sub_header_size = sizeof("Content-type: ") - 1 + 2 + sizeof("Content-range: bytes ") - 1 + 4;
 static const int boundary_size   = 2 + sizeof("RANGE_SEPARATOR") - 1 + 2;
@@ -907,6 +908,35 @@ do_send_hdr_info(void *data) {
 }
 
 void
+HttpSM::set_plugin_name(const void *addr) {
+  Dl_info dl_info;
+  int ret = 0;
+  if ((ret = dladdr(addr, &dl_info)) != 0) {
+    // the whole path of .so file
+    std::string path(dl_info.dli_fname);
+
+    // file name begin index
+    std::size_t first = path.find_last_of("/\\");
+    if (first == std::string::npos) {
+      first = 0;
+    } else {
+      first++;
+    }
+
+    // .so begin index
+    std::size_t end = path.rfind(".so");
+    if (end == std::string::npos) {
+      end = path.length();
+    }
+
+    plugin_name = path.substr(first, end - first);
+  } else {
+    // we could not get the plugin file name
+    plugin_name = "unknown";
+  }
+}
+
+void
 HttpSM::send_hdr_info(const char *tag) {
   // Important: Do not free this string here, it will be freed in the async http thread.
   std::string *postJson = create_post_json(tag);
@@ -950,12 +980,17 @@ HttpSM::create_post_json(const char *tag) {
   std::string *postJson = new std::string("{");
 
   *postJson += "\"state_machine_id\" : ";
-  snprintf(buf, sizeof(buf), "%lld", t_state.state_machine_id);
+  snprintf(buf, sizeof(buf), "%ld", t_state.state_machine_id);
   *postJson += buf;
 
   *postJson += ", ";
   *postJson += "\"hook_id\" : \"";
   *postJson += HttpDebugNames::get_api_hook_name(cur_hook_id);
+  *postJson += "\"";
+
+  *postJson += ", ";
+  *postJson += "\"plugin_name\" : \"";
+  *postJson += plugin_name;
   *postJson += "\"";
 
   *postJson += ", ";
@@ -1638,6 +1673,8 @@ HttpSM::state_api_callout(int event, void *data)
         // Before calling hook from plugin, send header info.
         URL *url = t_state.hdr_info.client_request.url_get();
         if (need_send_hdr_info(url)) {
+          // update the plugin name, before plugin and after plugin will use this
+          set_plugin_name((const void *)hook->m_cont->m_event_func);
           send_hdr_info("Before plugin");
         }
 

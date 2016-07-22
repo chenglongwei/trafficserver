@@ -488,6 +488,7 @@ protected:
 
   std::string get_hdr_info(HTTPHdr& hdr);
   std::string *create_post_json(const char *tag);
+  void set_plugin_name(const void *addr);
 
 public:
   // Stats & Logging Info
