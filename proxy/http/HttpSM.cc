@@ -850,10 +850,10 @@ HttpSM::get_query_debug_state(URL *url) {
   const char * query;
   int query_length;
   query = url->query_get(&query_length);
-  if (query_length == 8 && strncmp(query, "debug=on", 8) == 0) {
+  if (strncmp(query, "debug=on", 8) == 0) {
 	  return 1;
   }
-  if (query_length == 9 && strncmp(query, "debug=off", 9) == 0) {
+  if (strncmp(query, "debug=off", 9) == 0) {
 	  return 0;
   }
 
